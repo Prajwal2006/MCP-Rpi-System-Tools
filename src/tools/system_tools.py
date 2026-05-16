@@ -6,17 +6,22 @@ Dangerous actions (restart / shutdown) follow a two-step confirmation flow
 to prevent accidental or malicious execution:
 
 1. The agent calls ``request_restart()`` or ``request_shutdown()``.
-   The server stores a pending action and returns a
-   ``confirmation_required`` response containing the token the user must
-   supply.
-2. Within 30 seconds the user echoes the token (e.g. ``CONFIRM_RESTART``).
-3. The agent calls ``confirm_action(action="CONFIRM_RESTART")``.
+   The server generates a cryptographically random one-time token and
+   stores a pending action, returning the token in the response so the
+   human user can read it (e.g. ``CONFIRM_RESTART_A8F291``).
+2. Within 30 seconds the user types the token back to the agent.
+3. The agent calls ``confirm_action(action="CONFIRM_RESTART_A8F291")``.
    If the token is valid and unexpired the server executes the command.
+
+Because the token is random and unknown before ``request_restart()`` or
+``request_shutdown()`` is called, an AI agent cannot pre-compute it and
+self-confirm in the same reasoning turn.
 
 Security notes:
     * ONLY ``sudo reboot`` and ``sudo shutdown now`` are ever executed.
     * No arbitrary shell commands are exposed or accepted.
-    * Confirmation tokens are validated with an exact string comparison.
+    * Confirmation tokens are generated with :func:`secrets.token_hex` and
+      validated with an exact string comparison.
     * A pending action expires automatically after 30 seconds.
     * Power actions are also gated behind the ``MCP_ALLOW_POWER_ACTIONS``
       environment flag (default: ``false``).
@@ -31,7 +36,7 @@ from typing import Any
 import psutil
 
 from config.settings import SETTINGS
-from tools.confirmation_manager import CONFIRMATION_TOKENS, get_manager
+from tools.confirmation_manager import get_manager
 from utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -116,23 +121,26 @@ def request_restart() -> dict[str, Any]:
 
     Purpose:
         Initiates the two-step confirmation flow for a system restart.
-        The returned message contains the exact token (``CONFIRM_RESTART``)
-        that the user must supply to :func:`confirm_action` within 30 seconds.
+        Generates a cryptographically random one-time token (e.g.
+        ``CONFIRM_RESTART_A8F291``) that the user must supply to
+        :func:`confirm_action` within 30 seconds.
 
     Security notes:
-        * This function never executes any command; it only stores pending
-          state.
+        * This function never executes any command; it only generates a
+          random token and stores pending state.
+        * The token is unpredictable, so an AI agent cannot self-confirm
+          in the same reasoning turn.
         * Guarded by the ``MCP_ALLOW_POWER_ACTIONS`` policy flag.
 
     Usage flow::
 
         Agent calls request_restart()
         → {"status": "confirmation_required",
-           "message": "Reply with CONFIRM_RESTART within 30 seconds to confirm."}
+           "message": "Reply with CONFIRM_RESTART_A8F291 within 30 seconds to confirm."}
 
-        User replies: CONFIRM_RESTART
+        User reads the token and types it back to the agent.
 
-        Agent calls confirm_action(action="CONFIRM_RESTART")
+        Agent calls confirm_action(action="CONFIRM_RESTART_A8F291")
         → {"status": "restarting", ...}
 
     Returns:
@@ -150,23 +158,26 @@ def request_shutdown() -> dict[str, Any]:
 
     Purpose:
         Initiates the two-step confirmation flow for a system shutdown.
-        The returned message contains the exact token (``CONFIRM_SHUTDOWN``)
-        that the user must supply to :func:`confirm_action` within 30 seconds.
+        Generates a cryptographically random one-time token (e.g.
+        ``CONFIRM_SHUTDOWN_B72C1D``) that the user must supply to
+        :func:`confirm_action` within 30 seconds.
 
     Security notes:
-        * This function never executes any command; it only stores pending
-          state.
+        * This function never executes any command; it only generates a
+          random token and stores pending state.
+        * The token is unpredictable, so an AI agent cannot self-confirm
+          in the same reasoning turn.
         * Guarded by the ``MCP_ALLOW_POWER_ACTIONS`` policy flag.
 
     Usage flow::
 
         Agent calls request_shutdown()
         → {"status": "confirmation_required",
-           "message": "Reply with CONFIRM_SHUTDOWN within 30 seconds to confirm."}
+           "message": "Reply with CONFIRM_SHUTDOWN_B72C1D within 30 seconds to confirm."}
 
-        User replies: CONFIRM_SHUTDOWN
+        User reads the token and types it back to the agent.
 
-        Agent calls confirm_action(action="CONFIRM_SHUTDOWN")
+        Agent calls confirm_action(action="CONFIRM_SHUTDOWN_B72C1D")
         → {"status": "shutting_down", ...}
 
     Returns:
@@ -183,19 +194,25 @@ async def confirm_action(action: str) -> dict[str, Any]:
     """Confirm a previously requested dangerous action and execute it.
 
     Purpose:
-        Validates the confirmation token supplied by the user and, if valid
-        and unexpired, executes the corresponding whitelisted system command.
+        Validates the one-time random confirmation token supplied by the user
+        and, if valid and unexpired, executes the corresponding whitelisted
+        system command.
 
     Security notes:
-        * The ``action`` parameter is the *confirmation token* (e.g.
-          ``"CONFIRM_RESTART"``), not an arbitrary shell command.
-        * Only the two tokens in :data:`~tools.confirmation_manager.CONFIRMATION_TOKENS`
-          can ever resolve to an executable command.
+        * The ``action`` parameter is the *random confirmation token* returned
+          by ``request_restart`` or ``request_shutdown`` (e.g.
+          ``"CONFIRM_RESTART_A8F291"``), not an arbitrary shell command.
+        * Because tokens are cryptographically random and unknown before the
+          corresponding ``request_*`` call, an AI agent cannot self-confirm
+          within the same reasoning turn.
+        * Only the two whitelisted commands (``sudo reboot``,
+          ``sudo shutdown now``) can ever be executed.
         * Expired confirmations are rejected and the pending state is cleared.
 
     Args:
-        action: The confirmation token string supplied by the user, e.g.
-            ``"CONFIRM_RESTART"`` or ``"CONFIRM_SHUTDOWN"``.
+        action: The one-time confirmation token string typed by the human
+            user, e.g. ``"CONFIRM_RESTART_A8F291"`` or
+            ``"CONFIRM_SHUTDOWN_B72C1D"``.
 
     Returns:
         A JSON-compatible dict with one of the following ``status`` values:
@@ -220,6 +237,27 @@ async def confirm_action(action: str) -> dict[str, Any]:
     logger.info("Executing confirmed power action", extra={"action": resolved_action})
     result = await _run_power_command(resolved_action)
     return {"status": status_label, **result}
+
+
+def cancel_action() -> dict[str, Any]:
+    """Cancel any pending dangerous action (restart or shutdown).
+
+    Purpose:
+        Discards the pending confirmation state so that neither the current
+        token nor any future token submitted against the old request can
+        trigger an action.
+
+    Security notes:
+        * Safe to call even when no action is pending.
+        * After cancellation, ``confirm_action`` will return
+          ``"invalid_confirmation"`` for any token.
+
+    Returns:
+        A JSON-compatible dict with ``status="cancelled"`` if an action was
+        pending, or ``status="no_pending_action"`` otherwise.
+    """
+    logger.info("cancel_action called")
+    return get_manager().cancel()
 
 
 def get_uptime() -> dict[str, Any]:

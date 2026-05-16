@@ -15,7 +15,7 @@ from tools.confirmation_manager import ConfirmationManager, TTL_SECONDS, get_man
 from tools.future_tools import get_roadmap_todos
 from tools.network_tools import get_ip_addresses, get_network_usage
 from tools.process_tools import get_process_count, get_top_processes
-from tools.system_tools import confirm_action, get_uptime, request_restart, request_shutdown
+from tools.system_tools import cancel_action, confirm_action, get_uptime, request_restart, request_shutdown
 
 
 class ToolResponseTests(unittest.TestCase):
@@ -49,45 +49,80 @@ class ConfirmationManagerTests(unittest.TestCase):
     def test_request_returns_confirmation_required(self) -> None:
         result = self.mgr.request("restart")
         self.assertEqual(result["status"], "confirmation_required")
-        self.assertIn("CONFIRM_RESTART", result["message"])
+        # Token is random but must carry the correct action prefix.
+        self.assertIn("CONFIRM_RESTART_", result["message"])
+
+    def test_request_generates_unique_tokens(self) -> None:
+        """Each request must produce a different token."""
+        import re
+        r1 = self.mgr.request("restart")
+        r2 = self.mgr.request("restart")
+        # Extract tokens from messages using a pattern-based search so the
+        # test is not coupled to the exact whitespace layout of the message.
+        token1 = re.search(r"CONFIRM_\w+_[A-F0-9]{6}", r1["message"]).group(0)
+        token2 = re.search(r"CONFIRM_\w+_[A-F0-9]{6}", r2["message"]).group(0)
+        self.assertNotEqual(token1, token2)
+
+    def test_token_stored_on_request(self) -> None:
+        self.mgr.request("shutdown")
+        self.assertIsNotNone(self.mgr._token)
+        self.assertTrue(self.mgr._token.startswith("CONFIRM_SHUTDOWN_"))
 
     def test_confirm_valid_token(self) -> None:
         self.mgr.request("restart")
-        action, expired = self.mgr.confirm("CONFIRM_RESTART")
+        token = self.mgr._token
+        action, expired = self.mgr.confirm(token)
         self.assertEqual(action, "restart")
         self.assertFalse(expired)
 
     def test_confirm_wrong_token_returns_none(self) -> None:
         self.mgr.request("restart")
-        action, expired = self.mgr.confirm("CONFIRM_SHUTDOWN")
+        action, expired = self.mgr.confirm("CONFIRM_RESTART_WRONG1")
         self.assertIsNone(action)
         self.assertFalse(expired)
 
     def test_confirm_with_no_pending_returns_none(self) -> None:
-        action, expired = self.mgr.confirm("CONFIRM_RESTART")
+        action, expired = self.mgr.confirm("CONFIRM_RESTART_NOPEND")
         self.assertIsNone(action)
         self.assertFalse(expired)
 
     def test_confirm_expired_action(self) -> None:
         self.mgr.request("shutdown")
+        token = self.mgr._token
         # Wind the expiry back so the action appears expired.
         self.mgr.expiry = time.monotonic() - 1
-        action, expired = self.mgr.confirm("CONFIRM_SHUTDOWN")
+        action, expired = self.mgr.confirm(token)
         self.assertIsNone(action)
         self.assertTrue(expired)
         # Pending state must be cleared after expiry.
         self.assertIsNone(self.mgr.pending_action)
+        self.assertIsNone(self.mgr._token)
 
     def test_second_request_replaces_first(self) -> None:
         self.mgr.request("restart")
-        self.mgr.request("shutdown")
+        result = self.mgr.request("shutdown")
         self.assertEqual(self.mgr.pending_action, "shutdown")
+        self.assertIn("warning", result)
 
     def test_clear_removes_pending(self) -> None:
         self.mgr.request("restart")
         self.mgr.clear()
         self.assertIsNone(self.mgr.pending_action)
         self.assertIsNone(self.mgr.expiry)
+        self.assertIsNone(self.mgr._token)
+
+    def test_cancel_with_pending_action(self) -> None:
+        self.mgr.request("restart")
+        result = self.mgr.cancel()
+        self.assertEqual(result["status"], "cancelled")
+        self.assertTrue(result["ok"])
+        self.assertIsNone(self.mgr.pending_action)
+        self.assertIsNone(self.mgr._token)
+
+    def test_cancel_with_no_pending_action(self) -> None:
+        result = self.mgr.cancel()
+        self.assertEqual(result["status"], "no_pending_action")
+        self.assertTrue(result["ok"])
 
 
 class PowerToolPolicyTests(unittest.TestCase):
@@ -115,7 +150,8 @@ class PowerToolPolicyTests(unittest.TestCase):
             get_manager().clear()
             response = request_restart()
         self.assertEqual(response.get("status"), "confirmation_required")
-        self.assertIn("CONFIRM_RESTART", response.get("message", ""))
+        # Token is random; verify the correct prefix is present.
+        self.assertIn("CONFIRM_RESTART_", response.get("message", ""))
         get_manager().clear()
 
     def test_request_shutdown_requires_confirmation(self) -> None:
@@ -125,7 +161,7 @@ class PowerToolPolicyTests(unittest.TestCase):
             get_manager().clear()
             response = request_shutdown()
         self.assertEqual(response.get("status"), "confirmation_required")
-        self.assertIn("CONFIRM_SHUTDOWN", response.get("message", ""))
+        self.assertIn("CONFIRM_SHUTDOWN_", response.get("message", ""))
         get_manager().clear()
 
 
@@ -139,18 +175,54 @@ class ConfirmActionToolTests(unittest.TestCase):
         get_manager().clear()
 
     def test_confirm_without_pending_returns_invalid(self) -> None:
-        response = asyncio.run(confirm_action("CONFIRM_RESTART"))
+        response = asyncio.run(confirm_action("CONFIRM_RESTART_NOPEND"))
         self.assertEqual(response.get("status"), "invalid_confirmation")
 
     def test_confirm_expired_returns_expired_status(self) -> None:
         get_manager().request("restart")
+        token = get_manager()._token
         get_manager().expiry = time.monotonic() - 1  # force expiry
-        response = asyncio.run(confirm_action("CONFIRM_RESTART"))
+        response = asyncio.run(confirm_action(token))
         self.assertEqual(response.get("status"), "confirmation_expired")
 
     def test_confirm_wrong_token_returns_invalid(self) -> None:
         get_manager().request("restart")
-        response = asyncio.run(confirm_action("CONFIRM_SHUTDOWN"))
+        response = asyncio.run(confirm_action("CONFIRM_RESTART_WRONG1"))
+        self.assertEqual(response.get("status"), "invalid_confirmation")
+
+
+class CancelActionTests(unittest.TestCase):
+    """Tests for the cancel_action tool function."""
+
+    def setUp(self) -> None:
+        get_manager().clear()
+
+    def tearDown(self) -> None:
+        get_manager().clear()
+
+    def test_cancel_with_pending_action(self) -> None:
+        with patch("tools.system_tools.SETTINGS") as mock_settings:
+            mock_settings.allow_power_actions = True
+            request_restart()
+        response = cancel_action()
+        self.assertEqual(response.get("status"), "cancelled")
+        self.assertTrue(response.get("ok"))
+        self.assertIsNone(get_manager().pending_action)
+
+    def test_cancel_with_no_pending_action(self) -> None:
+        response = cancel_action()
+        self.assertEqual(response.get("status"), "no_pending_action")
+        self.assertTrue(response.get("ok"))
+
+    def test_confirm_after_cancel_returns_invalid(self) -> None:
+        """After cancellation, any token must be rejected."""
+        with patch("tools.system_tools.SETTINGS") as mock_settings:
+            mock_settings.allow_power_actions = True
+            req = request_restart()
+        # Extract the token that was issued.
+        token = get_manager()._token
+        cancel_action()
+        response = asyncio.run(confirm_action(token))
         self.assertEqual(response.get("status"), "invalid_confirmation")
 
 

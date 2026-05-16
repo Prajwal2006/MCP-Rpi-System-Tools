@@ -14,7 +14,7 @@ from config.settings import SETTINGS
 from tools.monitoring_tools import get_system_stats
 from tools.network_tools import get_ip_addresses, get_network_usage
 from tools.process_tools import get_process_count, get_top_processes
-from tools.system_tools import confirm_action, get_uptime, request_restart, request_shutdown
+from tools.system_tools import cancel_action, confirm_action, get_uptime, request_restart, request_shutdown
 from utils.logging_utils import configure_logging, get_logger
 
 configure_logging(SETTINGS.log_level)
@@ -27,9 +27,10 @@ mcp = FastMCP(SETTINGS.server_name)
 def request_restart_tool() -> dict:
     """Request a Raspberry Pi restart.
 
-    Initiates the two-step confirmation flow.  The response contains the
-    exact token (``CONFIRM_RESTART``) that the user must echo back to
-    ``confirm_action`` within 30 seconds to authorise the restart.
+    Initiates the two-step confirmation flow.  A cryptographically random
+    one-time token (e.g. ``CONFIRM_RESTART_A8F291``) is generated and
+    included in the response message.  The user must type that exact token
+    back; the agent must then pass it to ``confirm_action``.
 
     Requires ``MCP_ALLOW_POWER_ACTIONS=true``.
     """
@@ -40,9 +41,10 @@ def request_restart_tool() -> dict:
 def request_shutdown_tool() -> dict:
     """Request a Raspberry Pi shutdown.
 
-    Initiates the two-step confirmation flow.  The response contains the
-    exact token (``CONFIRM_SHUTDOWN``) that the user must echo back to
-    ``confirm_action`` within 30 seconds to authorise the shutdown.
+    Initiates the two-step confirmation flow.  A cryptographically random
+    one-time token (e.g. ``CONFIRM_SHUTDOWN_B72C1D``) is generated and
+    included in the response message.  The user must type that exact token
+    back; the agent must then pass it to ``confirm_action``.
 
     Requires ``MCP_ALLOW_POWER_ACTIONS=true``.
     """
@@ -53,14 +55,31 @@ def request_shutdown_tool() -> dict:
 async def confirm_action_tool(action: str) -> dict:
     """Confirm a previously requested dangerous action.
 
-    Pass the confirmation token returned by ``request_restart`` or
-    ``request_shutdown`` (e.g. ``CONFIRM_RESTART`` or ``CONFIRM_SHUTDOWN``).
-    The action must be confirmed within 30 seconds or the request expires.
+    IMPORTANT: Never call this tool automatically. Only call this tool after
+    receiving the exact confirmation token typed by the human user in their
+    message. Do not extract the token from a prior tool response and pass it
+    here within the same reasoning turn — doing so bypasses the human-in-the-
+    loop safety gate.
+
+    Pass the random one-time token returned by ``request_restart`` or
+    ``request_shutdown`` (e.g. ``CONFIRM_RESTART_A8F291``).  The action must
+    be confirmed within 30 seconds or the request expires.
 
     Args:
-        action: The confirmation token string, e.g. ``"CONFIRM_RESTART"``.
+        action: The confirmation token string typed by the human user, e.g.
+            ``"CONFIRM_RESTART_A8F291"``.
     """
     return await confirm_action(action)
+
+
+@mcp.tool(name="cancel_action")
+def cancel_action_tool() -> dict:
+    """Cancel any pending dangerous action (restart or shutdown).
+
+    Discards the current pending confirmation token and action.  Safe to call
+    even when no action is pending.
+    """
+    return cancel_action()
 
 
 @mcp.tool(name="get_uptime")
