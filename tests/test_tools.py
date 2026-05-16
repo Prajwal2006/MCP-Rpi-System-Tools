@@ -81,6 +81,33 @@ class ConfirmationManagerTests(unittest.TestCase):
         self.assertIsNone(action)
         self.assertFalse(expired)
 
+    def test_confirm_rejects_partial_token(self) -> None:
+        self.mgr.request("restart")
+        action, expired = self.mgr.confirm("CONFIRM_RESTART")
+        self.assertIsNone(action)
+        self.assertFalse(expired)
+
+    def test_confirm_rejects_case_changed_token(self) -> None:
+        self.mgr.request("restart")
+        token = self.mgr._token.lower()
+        action, expired = self.mgr.confirm(token)
+        self.assertIsNone(action)
+        self.assertFalse(expired)
+
+    def test_confirm_rejects_token_with_extra_suffix(self) -> None:
+        self.mgr.request("restart")
+        token = f"{self.mgr._token}_EXTRA"
+        action, expired = self.mgr.confirm(token)
+        self.assertIsNone(action)
+        self.assertFalse(expired)
+
+    def test_confirm_accepts_whitespace_padded_exact_token(self) -> None:
+        self.mgr.request("restart")
+        token = f"  {self.mgr._token}  "
+        action, expired = self.mgr.confirm(token)
+        self.assertEqual(action, "restart")
+        self.assertFalse(expired)
+
     def test_confirm_with_no_pending_returns_none(self) -> None:
         action, expired = self.mgr.confirm("CONFIRM_RESTART_NOPEND")
         self.assertIsNone(action)

@@ -177,6 +177,15 @@ class ConfirmationManager:
             logger.warning("Confirmation attempt with no pending action")
             return None, False
 
+        # Unit-test-style validation examples:
+        # VALID: CONFIRM_RESTART_A8F291
+        # INVALID: CONFIRM_RESTART
+        # INVALID: confirm_restart_a8f291
+        # INVALID: CONFIRM_RESTART_A8F29
+        # INVALID: CONFIRM_RESTART_A8F291_EXTRA
+
+        token = token.strip()
+
         if time.monotonic() > (self.expiry or 0.0):
             logger.warning(
                 "Confirmation expired",
@@ -186,14 +195,11 @@ class ConfirmationManager:
             return None, True
 
         if token != self._token:
-            logger.warning(
-                "Invalid confirmation token received",
-                extra={"action": self.pending_action},
-            )
+            logger.warning("Invalid confirmation token attempt: %s", token)
             return None, False
 
         action = self.pending_action
-        logger.info("Confirmation accepted", extra={"action": action})
+        logger.info("Confirmation accepted: %s", action)
         self._clear()
         return action, False
 
