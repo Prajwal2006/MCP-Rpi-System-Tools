@@ -14,7 +14,7 @@ from config.settings import SETTINGS
 from tools.monitoring_tools import get_system_stats
 from tools.network_tools import get_ip_addresses, get_network_usage
 from tools.process_tools import get_process_count, get_top_processes
-from tools.system_tools import get_uptime, reboot_pi, shutdown_pi
+from tools.system_tools import confirm_action, get_uptime, request_restart, request_shutdown
 from utils.logging_utils import configure_logging, get_logger
 
 configure_logging(SETTINGS.log_level)
@@ -23,18 +23,44 @@ logger = get_logger(__name__)
 mcp = FastMCP(SETTINGS.server_name)
 
 
-@mcp.tool(name="reboot_pi")
-async def reboot_pi_tool() -> dict:
-    """Reboot the Raspberry Pi host (guarded by policy)."""
+@mcp.tool(name="request_restart")
+def request_restart_tool() -> dict:
+    """Request a Raspberry Pi restart.
 
-    return await reboot_pi()
+    Initiates the two-step confirmation flow.  The response contains the
+    exact token (``CONFIRM_RESTART``) that the user must echo back to
+    ``confirm_action`` within 30 seconds to authorise the restart.
+
+    Requires ``MCP_ALLOW_POWER_ACTIONS=true``.
+    """
+    return request_restart()
 
 
-@mcp.tool(name="shutdown_pi")
-async def shutdown_pi_tool() -> dict:
-    """Shutdown the Raspberry Pi host (guarded by policy)."""
+@mcp.tool(name="request_shutdown")
+def request_shutdown_tool() -> dict:
+    """Request a Raspberry Pi shutdown.
 
-    return await shutdown_pi()
+    Initiates the two-step confirmation flow.  The response contains the
+    exact token (``CONFIRM_SHUTDOWN``) that the user must echo back to
+    ``confirm_action`` within 30 seconds to authorise the shutdown.
+
+    Requires ``MCP_ALLOW_POWER_ACTIONS=true``.
+    """
+    return request_shutdown()
+
+
+@mcp.tool(name="confirm_action")
+async def confirm_action_tool(action: str) -> dict:
+    """Confirm a previously requested dangerous action.
+
+    Pass the confirmation token returned by ``request_restart`` or
+    ``request_shutdown`` (e.g. ``CONFIRM_RESTART`` or ``CONFIRM_SHUTDOWN``).
+    The action must be confirmed within 30 seconds or the request expires.
+
+    Args:
+        action: The confirmation token string, e.g. ``"CONFIRM_RESTART"``.
+    """
+    return await confirm_action(action)
 
 
 @mcp.tool(name="get_uptime")
