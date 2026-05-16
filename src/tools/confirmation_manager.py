@@ -71,7 +71,7 @@ def _generate_token(action: str) -> str:
         hex suffix is produced by :func:`secrets.token_hex` and is unique to
         each call.
     """
-    suffix = secrets.token_hex(3).upper()  # 3 bytes → 6 uppercase hex chars
+    suffix = secrets.token_hex(3).upper()  # 3 bytes → 6 lowercase hex chars, uppercased
     return f"{_TOKEN_PREFIXES[action]}_{suffix}"
 
 

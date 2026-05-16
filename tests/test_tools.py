@@ -54,11 +54,13 @@ class ConfirmationManagerTests(unittest.TestCase):
 
     def test_request_generates_unique_tokens(self) -> None:
         """Each request must produce a different token."""
+        import re
         r1 = self.mgr.request("restart")
         r2 = self.mgr.request("restart")
-        # Extract tokens from messages – format: "Reply with TOKEN within …"
-        token1 = r1["message"].split()[2]
-        token2 = r2["message"].split()[2]
+        # Extract tokens from messages using a pattern-based search so the
+        # test is not coupled to the exact whitespace layout of the message.
+        token1 = re.search(r"CONFIRM_\w+_[A-F0-9]{6}", r1["message"]).group(0)
+        token2 = re.search(r"CONFIRM_\w+_[A-F0-9]{6}", r2["message"]).group(0)
         self.assertNotEqual(token1, token2)
 
     def test_token_stored_on_request(self) -> None:
