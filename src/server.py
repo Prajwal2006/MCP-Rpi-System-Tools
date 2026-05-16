@@ -32,7 +32,7 @@ def request_restart_tool() -> dict:
     included in the response message.  The user must type that exact token
     back; the agent must then pass it to ``confirm_action``.
 
-    Requires ``MCP_ALLOW_POWER_ACTIONS=true``.
+    Requires ``ALLOW_POWER_ACTIONS = True`` in ``config/settings.py``.
     """
     return request_restart()
 
@@ -46,7 +46,7 @@ def request_shutdown_tool() -> dict:
     included in the response message.  The user must type that exact token
     back; the agent must then pass it to ``confirm_action``.
 
-    Requires ``MCP_ALLOW_POWER_ACTIONS=true``.
+    Requires ``ALLOW_POWER_ACTIONS = True`` in ``config/settings.py``.
     """
     return request_shutdown()
 

@@ -5,7 +5,8 @@ services:
     restart: unless-stopped
     environment:
       MCP_LOG_LEVEL: INFO
-      MCP_ALLOW_POWER_ACTIONS: "false"
+      # Power action control is now configured in src/config/settings.py
+      # via ALLOW_POWER_ACTIONS. No environment variable is needed here.
     volumes:
       - ./src:/app/src:ro
     command: ["python3", "src/server.py"]

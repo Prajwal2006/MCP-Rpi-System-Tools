@@ -23,8 +23,8 @@ Security notes:
     * Confirmation tokens are generated with :func:`secrets.token_hex` and
       validated with an exact string comparison.
     * A pending action expires automatically after 30 seconds.
-    * Power actions are also gated behind the ``MCP_ALLOW_POWER_ACTIONS``
-      environment flag (default: ``false``).
+    * Power actions are also gated behind the ``ALLOW_POWER_ACTIONS`` setting
+      in ``config/settings.py`` (default: ``True``).
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from typing import Any
 
 import psutil
 
-from config.settings import SETTINGS
+from config.settings import ALLOW_POWER_ACTIONS
 from tools.confirmation_manager import get_manager
 from utils.logging_utils import get_logger
 
@@ -112,7 +112,7 @@ def _policy_denied_response(action: str) -> dict[str, Any]:
         "ok": False,
         "action": action,
         "error": "disabled_by_policy",
-        "message": "Set MCP_ALLOW_POWER_ACTIONS=true to enable power actions.",
+        "message": "Power actions are disabled. Set ALLOW_POWER_ACTIONS = True in config/settings.py to enable.",
     }
 
 
@@ -130,7 +130,7 @@ def request_restart() -> dict[str, Any]:
           random token and stores pending state.
         * The token is unpredictable, so an AI agent cannot self-confirm
           in the same reasoning turn.
-        * Guarded by the ``MCP_ALLOW_POWER_ACTIONS`` policy flag.
+        * Guarded by ``ALLOW_POWER_ACTIONS`` in ``config/settings.py``.
 
     Usage flow::
 
@@ -147,7 +147,7 @@ def request_restart() -> dict[str, Any]:
         A JSON-compatible dict with ``status="confirmation_required"`` or a
         policy-denial dict.
     """
-    if not SETTINGS.allow_power_actions:
+    if not ALLOW_POWER_ACTIONS:
         return _policy_denied_response("restart")
     logger.info("Restart requested – awaiting confirmation")
     return get_manager().request("restart")
@@ -167,7 +167,7 @@ def request_shutdown() -> dict[str, Any]:
           random token and stores pending state.
         * The token is unpredictable, so an AI agent cannot self-confirm
           in the same reasoning turn.
-        * Guarded by the ``MCP_ALLOW_POWER_ACTIONS`` policy flag.
+        * Guarded by ``ALLOW_POWER_ACTIONS`` in ``config/settings.py``.
 
     Usage flow::
 
@@ -184,7 +184,7 @@ def request_shutdown() -> dict[str, Any]:
         A JSON-compatible dict with ``status="confirmation_required"`` or a
         policy-denial dict.
     """
-    if not SETTINGS.allow_power_actions:
+    if not ALLOW_POWER_ACTIONS:
         return _policy_denied_response("shutdown")
     logger.info("Shutdown requested – awaiting confirmation")
     return get_manager().request("shutdown")
