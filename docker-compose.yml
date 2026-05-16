@@ -1,0 +1,11 @@
+services:
+  mcp-rpi-system:
+    build: .
+    container_name: mcp-rpi-system
+    restart: unless-stopped
+    environment:
+      MCP_LOG_LEVEL: INFO
+      MCP_ALLOW_POWER_ACTIONS: "false"
+    volumes:
+      - ./src:/app/src:ro
+    command: ["python3", "src/server.py"]
