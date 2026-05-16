@@ -47,6 +47,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from utils.logging_utils import get_logger
+from config.settings import CONFIRMATION_TIMEOUT
 
 logger = get_logger(__name__)
 
@@ -57,7 +58,9 @@ _TOKEN_PREFIXES: dict[str, str] = {
 }
 
 #: Seconds before a pending confirmation expires automatically.
-TTL_SECONDS: float = 30.0
+#: Derived from ``config.settings.CONFIRMATION_TIMEOUT`` so that the timeout
+#: is controlled from a single place in the configuration module.
+TTL_SECONDS: float = float(CONFIRMATION_TIMEOUT)
 
 
 def _generate_token(action: str) -> str:

@@ -126,26 +126,23 @@ class ConfirmationManagerTests(unittest.TestCase):
 
 
 class PowerToolPolicyTests(unittest.TestCase):
-    """Ensure power tools respect the MCP_ALLOW_POWER_ACTIONS policy flag."""
+    """Ensure power tools respect the ALLOW_POWER_ACTIONS policy flag."""
 
     def test_request_restart_disabled_by_policy(self) -> None:
-        with patch("tools.system_tools.SETTINGS") as mock_settings:
-            mock_settings.allow_power_actions = False
+        with patch("tools.system_tools.ALLOW_POWER_ACTIONS", False):
             response = request_restart()
         self.assertEqual(response.get("status"), "error")
         self.assertEqual(response.get("error"), "disabled_by_policy")
 
     def test_request_shutdown_disabled_by_policy(self) -> None:
-        with patch("tools.system_tools.SETTINGS") as mock_settings:
-            mock_settings.allow_power_actions = False
+        with patch("tools.system_tools.ALLOW_POWER_ACTIONS", False):
             response = request_shutdown()
         self.assertEqual(response.get("status"), "error")
         self.assertEqual(response.get("error"), "disabled_by_policy")
 
     def test_request_restart_requires_confirmation(self) -> None:
         """When power actions are allowed, request_restart enters the flow."""
-        with patch("tools.system_tools.SETTINGS") as mock_settings:
-            mock_settings.allow_power_actions = True
+        with patch("tools.system_tools.ALLOW_POWER_ACTIONS", True):
             # Reset the global manager so prior test state doesn't leak.
             get_manager().clear()
             response = request_restart()
@@ -156,8 +153,7 @@ class PowerToolPolicyTests(unittest.TestCase):
 
     def test_request_shutdown_requires_confirmation(self) -> None:
         """When power actions are allowed, request_shutdown enters the flow."""
-        with patch("tools.system_tools.SETTINGS") as mock_settings:
-            mock_settings.allow_power_actions = True
+        with patch("tools.system_tools.ALLOW_POWER_ACTIONS", True):
             get_manager().clear()
             response = request_shutdown()
         self.assertEqual(response.get("status"), "confirmation_required")
@@ -201,8 +197,7 @@ class CancelActionTests(unittest.TestCase):
         get_manager().clear()
 
     def test_cancel_with_pending_action(self) -> None:
-        with patch("tools.system_tools.SETTINGS") as mock_settings:
-            mock_settings.allow_power_actions = True
+        with patch("tools.system_tools.ALLOW_POWER_ACTIONS", True):
             request_restart()
         response = cancel_action()
         self.assertEqual(response.get("status"), "cancelled")
@@ -216,9 +211,8 @@ class CancelActionTests(unittest.TestCase):
 
     def test_confirm_after_cancel_returns_invalid(self) -> None:
         """After cancellation, any token must be rejected."""
-        with patch("tools.system_tools.SETTINGS") as mock_settings:
-            mock_settings.allow_power_actions = True
-            req = request_restart()
+        with patch("tools.system_tools.ALLOW_POWER_ACTIONS", True):
+            request_restart()
         # Extract the token that was issued.
         token = get_manager()._token
         cancel_action()

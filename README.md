@@ -146,7 +146,57 @@ Agent →  User:   "The pending restart has been cancelled."
 
 After cancellation, any subsequently submitted token is rejected.
 
-## OpenClaw Integration
+## Configuration
+
+All configurable values are centralised in `src/config/settings.py`.  Edit that
+file directly — no environment variables are required for security-sensitive
+settings.
+
+### Enabling / disabling power actions
+
+```python
+# src/config/settings.py
+
+# Set to True to allow restart/shutdown requests from the MCP client.
+# Set to False to hard-disable all power actions regardless of client input.
+ALLOW_POWER_ACTIONS: bool = True
+```
+
+Even when `ALLOW_POWER_ACTIONS = True`, a human must still supply the
+cryptographically random one-time token before any power command runs.
+Setting it to `False` disables the tools entirely at the policy level.
+
+### Changing the confirmation timeout
+
+```python
+# src/config/settings.py
+
+# Seconds a pending confirmation token remains valid before it expires.
+CONFIRMATION_TIMEOUT: int = 30
+```
+
+### Future feature flags
+
+The following flags are `False` by default and will enable optional tool
+modules when they are implemented:
+
+| Flag | Purpose |
+|---|---|
+| `ENABLE_GPIO` | GPIO control tools (requires `RPi.GPIO` or `lgpio`) |
+| `ENABLE_DOCKER_MONITORING` | Docker container metrics (requires `docker` SDK) |
+| `ENABLE_CAMERA_TOOLS` | Raspberry Pi camera tools (requires `picamera2`) |
+| `ENABLE_AUDIO_TOOLS` | Audio input/output tools (requires `pyaudio` or `sounddevice`) |
+
+### Operational settings (environment variables)
+
+The server name and log level are the only values that remain configurable
+via environment variables because they are deployment-specific and not
+security-sensitive:
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCP_SERVER_NAME` | `mcp-rpi-system` | FastMCP server identity name |
+| `MCP_LOG_LEVEL` | `INFO` | Python logging level |
 
 ### MCP server configuration
 
@@ -216,7 +266,7 @@ Agent: [calls get_system_stats] The CPU is at 52.3 °C, running at 18% load.
 - All subprocess usage is fixed-command and whitelisted (`sudo reboot`, `sudo shutdown now`).
 - Confirmation tokens are generated with `secrets.token_hex` – cryptographically random and unique per request.
 - An AI agent cannot self-confirm a power action because the token is unknown before `request_restart()` / `request_shutdown()` is called.
-- Power actions require both an environment-flag (`MCP_ALLOW_POWER_ACTIONS=true`) **and** explicit user confirmation within 30 seconds.
+- Power actions require both `ALLOW_POWER_ACTIONS = True` in `config/settings.py` **and** explicit user confirmation within 30 seconds.
 - Tokens are validated with an exact string comparison; fuzzy or prefix matching is never used.
 - The expected token is never written to logs to prevent exposure in log aggregation systems.
 - User input validation is applied for tool parameters (for example, process list limits).
@@ -268,7 +318,9 @@ cp .env.example .env
 
 - `MCP_SERVER_NAME` (default: `mcp-rpi-system`)
 - `MCP_LOG_LEVEL` (default: `INFO`)
-- `MCP_ALLOW_POWER_ACTIONS` (default: `false`) – must be `true` to enable restart/shutdown
+
+> **Note:** Power action control is no longer configured via environment
+> variables.  Set `ALLOW_POWER_ACTIONS` directly in `src/config/settings.py`.
 
 ## Docker
 
