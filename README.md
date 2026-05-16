@@ -121,6 +121,9 @@ Use this MCP configuration:
 }
 ```
 
+> Note: the relative `src/server.py` path assumes OpenClaw starts the command from this repository root.  
+> For service deployments, prefer an absolute path (for example `/opt/mcp-rpi-system/src/server.py`).
+
 ## Docker
 
 Build and run:

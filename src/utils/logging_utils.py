@@ -7,6 +7,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+LOGGER_NAMESPACE = "mcp_rpi_system"
+
 
 class JsonFormatter(logging.Formatter):
     """Log formatter that emits JSON log messages."""
@@ -26,15 +28,19 @@ class JsonFormatter(logging.Formatter):
 def configure_logging(level: str = "INFO") -> None:
     """Configure process-wide structured logging."""
 
-    root = logging.getLogger()
-    root.handlers.clear()
+    logger = logging.getLogger(LOGGER_NAMESPACE)
+    logger.setLevel(level)
+    logger.propagate = False
+
+    if logger.handlers:
+        return
+
     handler = logging.StreamHandler()
     handler.setFormatter(JsonFormatter())
-    root.addHandler(handler)
-    root.setLevel(level)
+    logger.addHandler(handler)
 
 
 def get_logger(name: str) -> logging.Logger:
     """Get a named logger instance."""
 
-    return logging.getLogger(name)
+    return logging.getLogger(f"{LOGGER_NAMESPACE}.{name}")

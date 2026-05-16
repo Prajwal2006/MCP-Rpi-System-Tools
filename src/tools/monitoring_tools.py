@@ -65,7 +65,7 @@ async def get_system_stats() -> dict[str, Any]:
     """Return CPU, RAM, disk, temperature, and load-average metrics."""
 
     try:
-        cpu_usage = psutil.cpu_percent(interval=0.5)
+        cpu_usage = await asyncio.to_thread(psutil.cpu_percent, 0.5)
         memory = psutil.virtual_memory()
         disk = psutil.disk_usage("/")
         temperature = await _get_cpu_temperature()
